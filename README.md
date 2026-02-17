@@ -1,0 +1,2 @@
+# ai-knowledge-stock
+AWS上でknowledgeをストックしてAIで要約や検索をしてくれるシステム
