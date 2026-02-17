@@ -1,0 +1,221 @@
+アプリケーション
+  このプロジェクトはナレッジベースシステムでナレッジをストックしてAIで要約や検索をしてくれるシステムです。
+
+全体サーバ構成
+  フロントサーバ：ユーザに対する画面を提供する
+  バックエンドサーバ：フロントサーバもしくはユーザブラウザからの情報を提供するAPIサーバ
+  データベースサーバ：バックエンドサーバにデータベース上のデータを提供する。バックエンドサーバからのデータを受け付けてデータの読み書きをする
+
+インフラ構成
+	インフラはローカル環境とAWS環境の2つを定義する。
+	AWS環境:	terraformを使ってAWS上に構築する
+  ローカル環境:	WSL上のDocker環境を利用してその上にDockerImageを展開することで構築する
+
+サーバ構成
+  フロントエンドサーバ：AWS上のEC2インスタンス
+  バックエンドサーバ：AWS上のEC2インスタンス
+  データベースサーバ：AWS上のEC2インスタンス（今回はAurora等ではなくEC2を利用する）
+  全てのサーバにはDocker環境を用意し、その上にDockerImageを展開することで構築する
+
+フォルダ構成
+	/
+	/frontend	フロントエンド関連を格納するフォルダ）
+				Dockerfile  frontendのイメージ作成用のDockerfile
+				frontend-config.json  アプリケーションが直接参照して利用する外部設定ファイル
+	/backend	バックエンド関連を格納するフォルダ（APIサーバ）
+				Dockerfile  backendのイメージ作成用のDockerfile
+				backend-config.json  アプリケーションが直接参照して利用する外部設定ファイル
+	/database	データベース関連を格納するフォルダ（データベースサーバ）
+				Dockerfile  databaseのイメージ作成用のDockerfile
+				database-config.json  アプリケーションが直接参照して利用する外部設定ファイル
+	/infra	インフラ関連を格納するフォルダ（local / aws で分離）
+		/local	ローカル用インフラ定義
+		/aws	AWS環境をTerraformで構築するフォルダ
+	/config	フロントエンド、バックエンド、データベース、インフラの枠を超えて参照する必要がある設定ファイルを置く。中身はEnv形式（HOME=/homeのような単純な形式のことを指す）で書く。
+		frontend.conf	フロントエンド用の設定ファイル。
+      変数名は FRONT_BASE_URL など、役割が明確になる命名規則にする。他の設定項目も参照して全体で統一感のある命名規則とする
+    	ポート番号は FRONT_BASE_PORT など、アプリ用設定の *_BASE_PORT を参照する。
+	  backend.conf	バックエンド用の設定ファイル。
+      変数名は BACK_BASE_URL など、役割が明確になる命名規則にする。他の設定項目も参照して全体で統一感のある命名規則とする
+      ポート番号は BACK_BASE_PORT など、アプリ用設定の *_BASE_PORT を参照する。
+		database.config	データベース用の設定ファイル。
+			接続先情報（HOST, PORT）のみを記載し、機密情報（USER, PASSWORD, DB名）は含めない。		
+		infra.conf	インフラ用の設定ファイル
+		common.conf	 共通で利用される設定を入れたファイル
+	/env	githubにあげなくない値を書くための設定ファイル。パスワードやシークレトキーなど。中身はEnv形式（HOME=/homeのような単純な形式のことを指す）で書く。
+		env.frontend	フロントエンド用の設定ファイル。
+		env.backend	バックエンド用の設定ファイル。
+		env.database	データベース用の設定ファイル。
+			機密情報（USER, PASSWORD, DB名）はここに記載する。config/database.configと重複しないようにする。
+		env.infra	インフラ用の設定ファイル
+	/docker	docker関連の設定ファイル。
+		Dockerfileは各サービスディレクトリ直下に配置し、local/aws共通とすること。
+		Docker-composeはaws/local用で分離し、そこでaws/localの環境差を吸収すること。
+				ローカル環境は docker/compose.local.yml を使用する。
+				AWS環境は docker/compose.aws.yml を使用する。
+		※ docker compose の設定では環境変数を直接記述せず、env_fileディレクティブ等を使用して /config や /env のファイルを読み込む構成にすること。
+		※ /config, /env にある設定については、必ずそれらのファイルから値をインポートして利用すること。
+		※ Dockerfileの配置（各サービス直下に配置すること）
+	/script	スクリプトを格納するフォルダ
+		build-aws	aws上に環境を構築するスクリプト
+		build-local	local上に環境を構築するスクリプト。Dockerデーモンの起動チェックをして起動していなかったら起動する処理を冒頭に入れること。
+		destroy-aws	aws上に構築した環境を全て削除するスクリプト
+		destroy-local	local上に構築した環境を全て削除するスクリプト
+
+環境構築
+	環境構築はmakeコマンドを利用する。Makeコマンドは既にインストール済み。Makeコマンドは/script内の必要なスクリプトを呼び出す構成とする。
+		make build-local	ローカルで環境を構築する。
+		make build-aws	AWSで環境を構築する
+		make destroy-local	ローカルで構築した環境を削除する
+		make destroy-aws	AWS上で構築した環境を削除する
+	ローカルは docker/compose.local.yml を使用する。
+	AWS用は docker/compose.aws.yml を使用する。
+	AWSは infra/aws のTerraform定義と各サービス直下のDockerfileを前提にする。
+	make build-*についてはgithubから初回pullして実行した場合、/env配下の設定ファイルがないことが考えられるので、/env配下の必要なファイルがない場合は自動作成する。
+	その際に、ユーザからの情報が必要な場合は、対話形式で聞いて必要な情報を収集して該当のファイルを作成する。
+
+Docker composeコマンド
+	docker-composeコマンドではなくdocker composeコマンドを使用する。
+
+ローカル環境（Docker環境）
+  3つのDockerImageを作成する
+    frontend:         フロントエンドを提供する
+    backend:          バックエンドのAPIを提供する
+    database:         データベースを提供する
+  これらのwslのdocker上へ展開して動作するようにする
+  その際、docker上に専用のネットワーク設定をして上記がネットワークを介して通信できるようにする。
+	docker network	compose が自動作成（サブネットは固定しない。重複防止のため）
+	フロントエンドからバックエンドへ通信できるようにする
+	バックエンドからデータベースへ通信できるようにする
+  ホストからのポートフォワーディングは/config/common.confで定義されたxxxxx_HOST_PORT の値を使用する。
+  docker compose の ports 定義では以下の形式を使用すること：	"${*_HOST_PORT}:${*_CONTAINER_PORT}"
+
+AWS環境
+　後から指示するので現時点では作成しない
+
+共通設定
+	コンテナ内部ポートとホスト公開ポートを /config/common.conf に定義する。
+	コンテナ内部ポートはアプリケーション内部で利用するポートとする。
+	ホスト公開ポートは docker compose の ports 定義で使用する。
+		FRONT_CONTAINER_PORT=5173	（Vite のデフォルトポート）
+		FRONT_HOST_PORT=8080
+		BACK_CONTAINER_PORT=5000
+		BACK_HOST_PORT=5000
+		DATABASE_CONTAINER_PORT=5432
+		DATABASE_HOST_PORT=5432
+	※ /config/common.conf にはポート定義のみを記載する。
+	※ URL（接続先）は各アプリ用設定ファイルに定義すること。
+	※ URL と PORT の責務を分離すること。
+	例：
+	frontend.conf
+		BACK_BASE_URL=localhost
+		BACK_BASE_PORT=5000
+	backend.conf
+		POSTGRES_HOST=database
+		POSTGRES_PORT=5432
+		CORS_ORIGINS=http://localhost,http://localhost:8080,http://localhost:3000
+	※ BACK_BASE_URL はブラウザ（frontend）から到達可能なホスト名を指定する。
+	※ local 環境では BACK_BASE_URL=localhost を使用する。
+	※ Docker 内 service 名（例: backend）は、browser からは名前解決できないため frontend.conf の BACK_BASE_URL には使用しない。
+	※ POSTGRES_HOST は Docker 内の service 名を指定する。
+	※ CORS_ORIGINS はブラウザからアクセスされるオリジンを指定する。
+	※ CORS_ORIGINS は必須環境変数とする。
+	アプリケーションは *_BASE_PORT を参照すること。
+	ホスト公開ポート (*_HOST_PORT) はアプリケーションコードから参照しないこと。
+
+コード実装要件
+	必須の環境変数（BACK_BASE_PORT, BACK_CONTAINER_PORT, DB接続情報, CORS_ORIGINS など）が設定されていない場合は、
+	デフォルト値で動作させず、エラーを出して起動を停止すること（Fail Secure）。
+
+技術スタック
+　フロントエンド
+　	ユーザ画面提供する
+　　typescript, reactを利用する
+	　local, awsともに Vite（Node.js）を利用してそのままイメージ化してdocker環境（local）またはEC2上のdocker環境で実行する
+
+
+初期構築
+	　フロントエンドのユーザ画面について
+	　　　一旦、サンプルの適当なトップページを作成して欲しい。タイトルを「サンプルトップページ（ユーザ画面）」とすること。
+	　　　トップページの中央下段に「バックエンドへアクセス」ボタンを作成して押すと、以下を実施する。
+	　　　　　　バックエンド（http://${BACK_BASE_URL}:${BACK_BASE_PORT}/api/healthz）にアクセスして結果をその下に表示する。URLは環境変数から組み立てること。コード内にポート番号を直接記述しないこと。
+	　　　　　　　　正常:  　　　{"healthz": "success"} を返す
+	　　　　　　　　正常でない:  {"healthz": "fail"} を返す
+  　バックエンドのAPIについて
+    　フロントエンドからのAPIアクセスを受けて必要なデータを返す
+    　pythonを利用
+    　fastAPIを利用
+    　SQLAlchemyを利用
+    　コード実装要件
+      　必須の環境変数（PORT, DB接続情報など）が設定されていない場合は、デフォルト値で動作させるのではなく、エラーを出して起動を停止させること（Fail Secure）。
+
+    　DB接続URLを作成する際、パスワードはURLエンコードして組み立てる（`@` などの記号対策）
+    　SQLAlchemyのBaseクラスを使って、サンプルとしてuserテーブルを作成してください。
+    　以下のカラムを含めてください：
+      　id	ユーザID	PK、整数、自動インクリメント
+      　username	ユーザ名	文字列、最大20文字
+      　email	メールアドレス	文字列、ユニーク
+      　created_at	作成日時（作成されたときに入れる）	datetime型
+      　updated_at	更新日時（更新されたときに入れる、又は更新する）	datetime型
+      　deleted_at	削除日時（削除されたときに入れる）	datetime型
+    　/api/healthz（引数なし）にアクセスした場合、select 1;（DBへの接続テスト）を実施して
+    　　　　　　正常:  　　　{"healthz": "success"} を返す
+    　　　　　　正常でない:  {"healthz": "fail"} を返す
+  　データベース
+    　postgresqlを利用する
+    　環境設定は以下のようにする。
+    　/env/env.database に記載（機密情報）
+      　POSTGRES_USER=postgres
+      　POSTGRES_PASSWORD=P@ssw0rd!
+      　POSTGRES_DB=mydb
+    　/config/database.config に記載（接続情報）
+      　POSTGRES_HOST=database（Docker内のバックエンドからは service 名を使う）
+      　POSTGRES_PORT=5432
+      　PGDATA=/var/lib/postgresql/data
+
+.gitignore
+	/envの下は環境変数用なのですべてgithubにあげたくない
+	今回のアーキテクチャ、利用するコンポーネントを考慮して.gitignoreファイルを追記（なければ作成）すること
+
+/.cursorrulesを作成して内容は以下とする
+
+# Cursor AI設定
+
+## コミットメッセージ
+
+		- コミットメッセージは必ず日本語で記述してください。
+		- コミットメッセージの形式は以下の通りです：
+			- 1行目: 変更の種類と簡潔な説明（50文字以内推奨）
+			- 2行目: 空行
+			- 3行目以降: 変更内容の列挙（必要な場合のみ）
+
+		- コミットメッセージは、実際に作成・変更・削除されたファイルのみを基に生成してください。
+		- 事実のみを記述してください。
+		- 効果・意図・推測・評価・感想・背景説明は記述しないでください。
+		- 「〜しました」「〜になります」などの敬体・説明的文章は禁止。
+		- 文末は体言止め、または現在形で簡潔に記述してください。
+			- 例：
+				- 「スクリプトを追加」
+				- 「設定を修正」
+				- 「README更新」
+
+		- 複数箇所の変更がある場合は、簡潔に列挙してください。
+		- 不要な修飾語・抽象表現は使用しないでください。
+
+		## 変更の種類（プレフィックス）
+
+		- `feat:` - 新機能の追加
+		- `fix:` - バグ修正
+		- `docs:` - ドキュメントのみの変更
+		- `style:` - コードの動作に影響しない変更（フォーマット、セミコロンなど）
+		- `refactor:` - リファクタリング（機能追加やバグ修正を含まないコード改善）
+		- `perf:` - パフォーマンス改善
+		- `test:` - テストの追加・修正
+		- `chore:` - ビルドプロセスやツールの変更
+		- `infra:` - インフラストラクチャの変更
+
+		## リポジトリ境界の扱い
+
+		- ワークスペース内に複数リポジトリが存在する場合、現在コミット対象のリポジトリのみを文脈として扱ってください。
+		- 他リポジトリの変更や内容を推測に含めないでください。
+		- `env_document` はナレッジ保存用のリポジトリであり、メインプロジェクトのリポジトリとは無関係です。完全に別リポジトリとして扱ってください。

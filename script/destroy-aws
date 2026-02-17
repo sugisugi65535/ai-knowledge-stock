@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "AWS環境の削除は未実装です。現時点では local 環境のみ対応しています。"

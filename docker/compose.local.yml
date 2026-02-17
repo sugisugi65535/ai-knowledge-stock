@@ -1,0 +1,54 @@
+services:
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    env_file:
+      - ../config/common.conf
+      - ../config/frontend.conf
+      - ../env/env.frontend
+    ports:
+      - "${FRONT_HOST_PORT}:${FRONT_CONTAINER_PORT}"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    env_file:
+      - ../config/common.conf
+      - ../config/backend.conf
+      - ../config/database.config
+      - ../env/env.backend
+      - ../env/env.database
+    environment:
+      - PORT=${BACK_CONTAINER_PORT}
+    ports:
+      - "${BACK_HOST_PORT}:${BACK_CONTAINER_PORT}"
+    restart: on-failure
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    build:
+      context: ../database
+      dockerfile: Dockerfile
+    env_file:
+      - ../config/common.conf
+      - ../config/database.config
+      - ../env/env.database
+    ports:
+      - "${DATABASE_HOST_PORT}:${DATABASE_CONTAINER_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
