@@ -1,0 +1,115 @@
+現在の動作環境に加えてAWS環境を構築できるようにしたい。
+
+値の定義
+[クライアントIP] = 113.155.37.221/32
+[FRONT_CONTAINER_PORT]    = /config/common.confを参照
+[FRONT_HOST_PORT]         = /config/common.confを参照
+[BACK_CONTAINER_PORT]     = /config/common.confを参照
+[BACK_HOST_PORT]          = /config/common.confを参照
+[DATABASE_CONTAINER_PORT] = /config/common.confを参照
+[DATABASE_HOST_PORT]      = /config/common.confを参照
+
+環境変数の受け渡し仕様（補足情報）
+frontend: BACK_BASE_URL, BACK_BASE_PORT
+backend: PORT, POSTGRES_*, CORS_ORIGINS
+database: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+
+全体条件
+  ・AWS上にローカル環境と同環境を構築する
+
+構築方法
+  ・Terraformにて構築する
+  ・Terraformの構築環境がローカルにない場合は、初回はそのセッティングも実施すること
+
+AWS環境
+  ・東京リージョン（ap-northeast-1）を利用する
+
+AWS構成
+  ・フロントサーバ（EC2インスタンスにDocker環境を用意してその上にビルドしたイメージを展開することでフロントエンドを提供する）
+  ・バックエンドサーバ（EC2インスタンスにDocker環境を用意してその上にビルドしたイメージを展開することでバックエンドを提供する）
+  ・データベースサーバ（EC2インスタンスにDocker環境を用意してその上にビルドしたイメージを展開することでデータベースを提供する）
+
+ECR:
+  ・ECRについては手動で既に構築しているので構築に含めなくて良い
+
+実行イメージの取得
+  各EC2インスタンスで実行するイメージは以下のURIからそれぞれ取得する
+  取得するイメージのタグはlatestとする
+  EC2の起動時に自動的にDocker環境を実行し以下のURIからイメージを取得して自動的に実行する
+  ・フロントエンドサーバ：636965820260.dkr.ecr.ap-northeast-1.amazonaws.com/ai-knowledge-stock/frontend
+  ・バックエンドサーバ：636965820260.dkr.ecr.ap-northeast-1.amazonaws.com/ai-knowledge-stock/backend
+  ・データベースサーバ：636965820260.dkr.ecr.ap-northeast-1.amazonaws.com/ai-knowledge-stock/database
+
+具体的なリソースとパラメータ
+  ・VPC:10.0.0.0/16
+  ・サブネット1:10.0.1.0/24（ap-northeast-1aを利用）
+  ・サブネット2:10.0.2.0/24（ap-northeast-1dを利用）
+  ・インターネットゲートウェイ
+  ・ルートテーブル:0.0.0.0/0にインターネットゲートウェイを指定する
+  ・セキュリティグループ:
+      名前: alb-sg
+      インバウンド: [クライアントIP]からの 80/tcpのみ許可
+      アウトバウンド: 0.0.0.0/0へ全ての通信を許可
+      名前: ec2-frontend-sg
+      インバウンド: source_security_group_id = aws_security_group.alb_sg.idとして、albからの[FRONT_CONTAINER_PORT]/tcpのみ許可
+      アウトバウンド: 0.0.0.0/0へ全ての通信を許可
+      名前: ec2-backend-sg
+      インバウンド: source_security_group_id = aws_security_group.alb_sg.idとして、albからの[BACK_CONTAINER_PORT]/tcpのみ許可
+      アウトバウンド: 0.0.0.0/0へ全ての通信を許可
+      名前: ec2-database-sg
+      インバウンド: source_security_group_id = aws_security_group.ec2_backend_sg.idとして、backendからの[DATABASE_CONTAINER_PORT]/tcpのみ許可
+      アウトバウンド: 0.0.0.0/0へ全ての通信を許可
+    ※ec2-*のingress に cidr_blocksや0.0.0.0/0 を書かないこと
+    ※複数SGを1つにまとめないこと
+  ・ロードバランサー
+      Listenポート:80
+      セキュリティグループ: alb-sg
+      トラフィックの振り分け
+        バックエンド: /api/* -> Target:EC2インスタンス（バックエンドサーバ）[BACK_CONTAINER_PORT]ポートへ転送すること（aws_lb_listener_rule 優先度付き）
+        フロントエンド: /* -> Target:EC2インスタンス（フロントエンドサーバ）[FRONT_CONTAINER_PORT]ポートへ転送すること（デフォルトアクション）
+      ヘルスチェック
+        バックエンド: /api/healthz
+        フロントエンド: /
+  ・EC2インスタンス（フロントエンドサーバ）
+      t3.micro
+      Amazon Linux 2023最新バージョン
+      autoscalingのテンプレート化は不要
+      セキュリティグループ: ec2-frontend-sg
+      キーペア:なし（SSM利用のため）
+      パブリックIPの自動割り当て:あり
+      SSMの利用あり
+      ストレージ: 8GB/gp3
+      Docker環境
+  ・EC2インスタンス（バックエンドサーバ）
+      t3.micro
+      Amazon Linux 2023最新バージョン
+      autoscalingのテンプレート化は不要
+      セキュリティグループ: ec2-backend-sg
+      キーペア:なし（SSM利用のため）
+      パブリックIPの自動割り当て:あり
+      SSMの利用あり
+      ストレージ: 8GB/gp3
+      Docker環境
+  ・EC2インスタンス（データベースサーバ）
+      t3.micro
+      Amazon Linux 2023最新バージョン
+      autoscalingのテンプレート化は不要
+      セキュリティグループ: ec2-database-sg
+      キーペア:なし（SSM利用のため）
+      パブリックIPの自動割り当て:あり
+      SSMの利用あり
+      ストレージ: 8GB/gp3
+      Docker環境
+  ・全てのEC2をサブネット1に置く（PoC用の一時対応。Privateサブネットを使ってNatGWを設置すると利用料金が高いため）
+  ・タグ（全てのリソースに以下のタグを付与すること）: Project:AI-knowledge-stock
+
+ロールと権限
+  以下を作成すること。
+  - IAMロール名: user-role-ec2
+  - AssumeRoleポリシー: ec2.amazonaws.com を許可
+  - アタッチポリシー:
+      - AmazonEC2ContainerRegistryReadOnly
+      - AmazonSSMManagedInstanceCore
+  - Instance Profile を作成し、frontend/backend/database の各EC2に割り当てること
+
+
