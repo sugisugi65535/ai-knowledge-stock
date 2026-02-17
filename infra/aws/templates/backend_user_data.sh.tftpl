@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euxo pipefail
+
+dnf update -y
+dnf install -y docker awscli
+systemctl enable docker
+systemctl start docker
+
+aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry}
+docker pull ${image_uri}
+
+POSTGRES_USER="$(aws secretsmanager get-secret-value --region ${aws_region} --secret-id ${postgres_user_secret} --query SecretString --output text)"
+POSTGRES_PASSWORD="$(aws secretsmanager get-secret-value --region ${aws_region} --secret-id ${postgres_password_secret} --query SecretString --output text)"
+POSTGRES_DB="$(aws secretsmanager get-secret-value --region ${aws_region} --secret-id ${postgres_db_secret} --query SecretString --output text)"
+
+docker rm -f backend || true
+docker run -d --name backend \
+  -p ${back_container_port}:${back_container_port} \
+  -e PORT=${back_container_port} \
+  -e POSTGRES_USER="$${POSTGRES_USER}" \
+  -e POSTGRES_PASSWORD="$${POSTGRES_PASSWORD}" \
+  -e POSTGRES_DB="$${POSTGRES_DB}" \
+  -e POSTGRES_HOST=${database_private_ip} \
+  -e POSTGRES_PORT=${database_container_port} \
+  -e CORS_ORIGINS='${cors_origins}' \
+  ${image_uri}

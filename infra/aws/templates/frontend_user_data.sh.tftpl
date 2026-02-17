@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euxo pipefail
+
+dnf update -y
+dnf install -y docker awscli
+systemctl enable docker
+systemctl start docker
+
+aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry}
+docker pull ${image_uri}
+
+docker rm -f frontend || true
+docker run -d --name frontend \
+  -p ${front_container_port}:${front_container_port} \
+  -e FRONT_CONTAINER_PORT=${front_container_port} \
+  -e BACK_BASE_URL=${back_base_url} \
+  -e BACK_BASE_PORT=${back_base_port} \
+  ${image_uri}

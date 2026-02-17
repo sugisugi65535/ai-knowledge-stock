@@ -1,4 +1,4 @@
-.PHONY: build-local destroy-local build-aws destroy-aws
+.PHONY: build-local destroy-local build-aws destroy-aws put-secrets-aws
 
 build-local:
 	./script/build-local
@@ -11,3 +11,6 @@ build-aws:
 
 destroy-aws:
 	./script/destroy-aws
+
+put-secrets-aws:
+	./script/put-secrets-aws

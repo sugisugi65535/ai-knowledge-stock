@@ -1,4 +1,53 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "AWS環境の構築は未実装です。現時点では local 環境のみ対応しています。"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT_DIR}"
+
+install_terraform_if_needed() {
+  if command -v terraform >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "terraform が未インストールのためセットアップします..."
+  sudo apt-get update -y
+  sudo apt-get install -y gnupg software-properties-common curl
+  curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list >/dev/null
+  sudo apt-get update -y
+  sudo apt-get install -y terraform
+}
+
+ensure_env_files() {
+  mkdir -p "env"
+  [[ -f "env/env.infra" ]] || touch "env/env.infra"
+
+  if ! rg "^CLIENT_IP_CIDR=" "env/env.infra" >/dev/null 2>&1; then
+    read -r -p "CLIENT_IP_CIDR を入力してください (例 113.155.37.221/32): " CLIENT_IP_CIDR
+    echo "CLIENT_IP_CIDR=${CLIENT_IP_CIDR}" >> "env/env.infra"
+  fi
+}
+
+load_vars() {
+  set -a
+  source "config/infra.conf"
+  source "config/common.conf"
+  source "config/backend.conf"
+  source "env/env.infra"
+  set +a
+
+  export TF_VAR_aws_region="${AWS_REGION}"
+  export TF_VAR_client_ip_cidr="${CLIENT_IP_CIDR}"
+  export TF_VAR_front_container_port="${FRONT_CONTAINER_PORT}"
+  export TF_VAR_back_container_port="${BACK_CONTAINER_PORT}"
+  export TF_VAR_database_container_port="${DATABASE_CONTAINER_PORT}"
+  export TF_VAR_cors_origins="${CORS_ORIGINS}"
+}
+
+install_terraform_if_needed
+ensure_env_files
+load_vars
+
+terraform -chdir="infra/aws" init
+terraform -chdir="infra/aws" validate
+terraform -chdir="infra/aws" plan -out=tfplan

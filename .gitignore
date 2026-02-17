@@ -17,3 +17,10 @@ backend/**/*.pyc
 .DS_Store
 .idea/
 .vscode/
+
+# Terraform
+infra/aws/.terraform/
+infra/aws/*.tfstate
+infra/aws/*.tfstate.*
+infra/aws/crash.log
+infra/aws/tfplan

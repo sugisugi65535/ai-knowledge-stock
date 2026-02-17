@@ -8,6 +8,7 @@
 [BACK_HOST_PORT]          = /config/common.confを参照
 [DATABASE_CONTAINER_PORT] = /config/common.confを参照
 [DATABASE_HOST_PORT]      = /config/common.confを参照
+[TerraformCodeDir] = /infra/aws
 
 環境変数の受け渡し仕様（補足情報）
 frontend: BACK_BASE_URL, BACK_BASE_PORT
@@ -110,6 +111,40 @@ ECR:
   - アタッチポリシー:
       - AmazonEC2ContainerRegistryReadOnly
       - AmazonSSMManagedInstanceCore
+      - user-role-ec2-secrets-read（カスタムポリシー。Secrets Manager読み取り専用）
+  - user-role-ec2-secrets-read の権限内容:
+      - secretsmanager:GetSecretValue
+      - secretsmanager:DescribeSecret
+      - Resource は以下の Secret ARN のみに限定すること
+          - arn:aws:secretsmanager:ap-northeast-1:636965820260:secret:ai-knowledge-stock/postgres/user-*
+          - arn:aws:secretsmanager:ap-northeast-1:636965820260:secret:ai-knowledge-stock/postgres/password-*
+          - arn:aws:secretsmanager:ap-northeast-1:636965820260:secret:ai-knowledge-stock/postgres/db-*
   - Instance Profile を作成し、frontend/backend/database の各EC2に割り当てること
+
+機密情報（env/env.*に記載されている事項など）の利用
+・機密情報（POSTGRES_PASSWORD等）はTerraformの変数値として直接扱わずにSecretManagerを利用する
+・TerraformではSecrets Managerのsecret本体（キー/名前）のみ作成すること。
+・secretのvalueはTerraformで登録しないこと（terraform stateに機密値を残さないため）。
+・EC2のuser_dataには機密値をベタ書きしないこと。
+・EC2起動時にSecrets Managerからvalueを取得し、docker runの環境変数として渡すこと。
+・EC2ロールにSecrets Managerの読み取り権限を付与すること（必要最小権限）。
+
+ value投入スクリプト作成時の指示（この部分はTerraformのコードに含めない。makeスクリプトの作成について記述）
+・/script配下に、Secrets Managerへvalueを投入する専用スクリプトを作成すること。
+・/env/env.database を読み取り、POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB をSecrets Managerへ登録すること。
+・初回作成と更新の両方に対応すること。
+・makeコマンドから実行できるようにすること（make put-secrets-aws）。
+・build-awsと分離し、明示的に実行したときのみvalue投入すること。
+
+Terraformのコードについて
+・[TerraformCodeDir]の下に作成すること
+・できるだけ標準のフォルダ構成、ファイル構成、フォルダ名、ファイル名を利用すること
+・フォルダ名、ファイル名は統一性を持たせること
+・必要な箇所には日本語でコメントを入れること
+・セキュリティに配慮すること
+・リソース名、変数名はわかりやすいもので全体で統一性を持たせること
+・確実に動作するコードとすること
+・必要に応じて、.gitignoreなどの関連ファイルも更新するすること
+・terraform plan/applyできるまでの環境を構築すること（但し、terraform applyは絶対に実施してはいけない）
 
 

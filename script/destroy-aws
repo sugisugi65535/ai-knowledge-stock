@@ -1,4 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "AWS環境の削除は未実装です。現時点では local 環境のみ対応しています。"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT_DIR}"
+
+if ! command -v terraform >/dev/null 2>&1; then
+  echo "terraform がインストールされていません。" >&2
+  exit 1
+fi
+
+if [[ ! -f "env/env.infra" ]]; then
+  echo "env/env.infra が存在しないため destroy できません。" >&2
+  exit 1
+fi
+
+set -a
+source "config/infra.conf"
+source "config/common.conf"
+source "config/backend.conf"
+source "env/env.infra"
+set +a
+
+export TF_VAR_aws_region="${AWS_REGION}"
+export TF_VAR_client_ip_cidr="${CLIENT_IP_CIDR}"
+export TF_VAR_front_container_port="${FRONT_CONTAINER_PORT}"
+export TF_VAR_back_container_port="${BACK_CONTAINER_PORT}"
+export TF_VAR_database_container_port="${DATABASE_CONTAINER_PORT}"
+export TF_VAR_cors_origins="${CORS_ORIGINS}"
+
+terraform -chdir="infra/aws" init
+terraform -chdir="infra/aws" destroy -auto-approve
