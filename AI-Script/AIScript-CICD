@@ -1,0 +1,22 @@
+CICDの作成指示
+
+・事前情報
+    AWSのアカウントID: 636965820260
+    AWSのリージョン: ap-northeast-1
+    ECRのリポジトリ: terraformのvariables.tfに定義されているリポジトリを利用する（frontend, backend, databaseの3つ分）
+
+・github actionsにてCICDを実装する
+・必要な箇所には日本語のコメントを入れること
+・コードは見やすく分かりやすくシンプルを心がけること
+・CIとCDは別のワークフローとする
+・CIについては以下の通り
+    AWSが発行している最新の公式のテンプレートを利用すること
+    OIDC + AssumeRole方式を利用すること（AWS側に設定が必要な場合はTerraformを適切に書き換えること）
+    frontend, backend, databaseの3つを選択できるようにする
+    imageタグを入力できるようにする。但し、デフォルト値はlatestとして予め入力欄に入れておくこと
+    CIのnameは Build and Push Images to ECR とする
+・CDについては以下の通り
+    現時点では不要（EC2起動時に自動的にECRからイメージをpullして実行するため）
+
+
+・CICDの使い方についてreadme.mdに記載すること（記載済みの場合は必要に応じて更新すること）
