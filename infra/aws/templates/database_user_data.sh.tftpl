@@ -1,10 +1,14 @@
 #!/bin/bash
-set -euxo pipefail
+set -euo pipefail
 
 dnf update -y
 dnf install -y docker awscli
 systemctl enable docker
 systemctl start docker
+
+cat > /usr/local/bin/start-database.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
 
 aws ecr get-login-password --region ${aws_region} | docker login --username AWS --password-stdin ${ecr_registry}
 docker pull ${image_uri}
@@ -20,3 +24,25 @@ docker run -d --name database \
   -e POSTGRES_PASSWORD="$${POSTGRES_PASSWORD}" \
   -e POSTGRES_DB="$${POSTGRES_DB}" \
   ${image_uri}
+EOF
+
+chmod +x /usr/local/bin/start-database.sh
+
+cat > /etc/systemd/system/database-bootstrap.service <<'EOF'
+[Unit]
+Description=Bootstrap database container from ECR at boot
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/start-database.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now database-bootstrap.service
