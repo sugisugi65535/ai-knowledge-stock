@@ -147,4 +147,25 @@ Terraformのコードについて
 ・必要に応じて、.gitignoreなどの関連ファイルも更新するすること
 ・terraform plan/applyできるまでの環境を構築すること（但し、terraform applyは絶対に実施してはいけない）
 
+terraform.tfstateについて
+・tfstateの保存先: AWS上のS3
+・tfstate保存先バケット: tfstate-ai-knowledge-stock
+・tfstate key: ai-knowledge-stock/prd/terraform.tfstate
+・リージョン: ap-northeast-1
+・バージョニング: 有効
+
+makeについて
+・make build-awsでこのterraformを使ってAWS環境にリソースを構築できるようにしてほしい
+・make build-awsしたときに、AWSログインしているかどうか確認して、ログインしていなかったらログインするようにメッセージをだして処理を停止させるようにする
+　（そのメッセージのなかにaws loginコマンドの使い方の例を表示する）
+・make build-awsしたときに、tfstate保存先、指定したイメージを保存するECRリポジトリがない場合は、その旨メッセージを出して処理を停止させるようにする
+・make build-awsしたときに、terraform planの結果を表示する。その後、terraform applyしてよいかどうかを聞いて、yが押されたらterraform applyする。
+・make destory-awsでmake build-awsで作成したリソースを全てdestroyできるようにする
+・make destory-awsした際に本当にdestroyしてよいかどうかを聞いて、yが押されたらterraform destroyする
+
+
+
+
+
+
 

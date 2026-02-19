@@ -4,6 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
+TFSTATE_BUCKET_DEFAULT="tfstate-ai-knowledge-stock"
+TFSTATE_KEY_DEFAULT="ai-knowledge-stock/prd/terraform.tfstate"
+TFSTATE_REGION_DEFAULT="ap-northeast-1"
+ECR_REPOS=(
+  "ai-knowledge-stock/frontend"
+  "ai-knowledge-stock/backend"
+  "ai-knowledge-stock/database"
+)
+
 install_terraform_if_needed() {
   if command -v terraform >/dev/null 2>&1; then
     return
@@ -42,12 +51,56 @@ load_vars() {
   export TF_VAR_back_container_port="${BACK_CONTAINER_PORT}"
   export TF_VAR_database_container_port="${DATABASE_CONTAINER_PORT}"
   export TF_VAR_cors_origins="${CORS_ORIGINS}"
+
+  export TFSTATE_BUCKET="${TFSTATE_BUCKET:-${TFSTATE_BUCKET_DEFAULT}}"
+  export TFSTATE_KEY="${TFSTATE_KEY:-${TFSTATE_KEY_DEFAULT}}"
+  export TFSTATE_REGION="${TFSTATE_REGION:-${TFSTATE_REGION_DEFAULT}}"
 }
 
 install_terraform_if_needed
 ensure_env_files
 load_vars
 
-terraform -chdir="infra/aws" init
+if ! command -v aws >/dev/null 2>&1; then
+  echo "aws CLI がインストールされていません。先にインストールしてください。" >&2
+  exit 1
+fi
+
+if ! aws sts get-caller-identity >/dev/null 2>&1; then
+  echo "AWSにログインされていません。このシェルで認証してから再実行してください。" >&2
+  echo "例: aws sso login --profile <profile>" >&2
+  echo "    または aws configure で認証情報を設定" >&2
+  exit 1
+fi
+
+if ! aws s3api head-bucket --bucket "${TFSTATE_BUCKET}" >/dev/null 2>&1; then
+  echo "tfstate保存先バケットが存在しません: ${TFSTATE_BUCKET}" >&2
+  exit 1
+fi
+
+BUCKET_VERSIONING_STATUS="$(aws s3api get-bucket-versioning --bucket "${TFSTATE_BUCKET}" --query "Status" --output text 2>/dev/null || true)"
+if [[ "${BUCKET_VERSIONING_STATUS}" != "Enabled" ]]; then
+  echo "tfstate保存先バケットのバージョニングが有効ではありません: ${TFSTATE_BUCKET}" >&2
+  exit 1
+fi
+
+for repo in "${ECR_REPOS[@]}"; do
+  if ! aws ecr describe-repositories --region "${TF_VAR_aws_region}" --repository-names "${repo}" >/dev/null 2>&1; then
+    echo "ECRリポジトリが存在しません: ${repo}" >&2
+    exit 1
+  fi
+done
+
+terraform -chdir="infra/aws" init \
+  -backend-config="bucket=${TFSTATE_BUCKET}" \
+  -backend-config="key=${TFSTATE_KEY}" \
+  -backend-config="region=${TFSTATE_REGION}"
 terraform -chdir="infra/aws" validate
 terraform -chdir="infra/aws" plan -out=tfplan
+
+read -r -p "terraform apply を実行しますか？ (y/N): " APPLY_CONFIRM
+if [[ "${APPLY_CONFIRM}" == "y" || "${APPLY_CONFIRM}" == "Y" ]]; then
+  terraform -chdir="infra/aws" apply tfplan
+else
+  echo "applyは実行しませんでした。"
+fi

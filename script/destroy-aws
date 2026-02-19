@@ -4,8 +4,24 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
+TFSTATE_BUCKET_DEFAULT="tfstate-ai-knowledge-stock"
+TFSTATE_KEY_DEFAULT="ai-knowledge-stock/prd/terraform.tfstate"
+TFSTATE_REGION_DEFAULT="ap-northeast-1"
+
 if ! command -v terraform >/dev/null 2>&1; then
   echo "terraform がインストールされていません。" >&2
+  exit 1
+fi
+
+if ! command -v aws >/dev/null 2>&1; then
+  echo "aws CLI がインストールされていません。" >&2
+  exit 1
+fi
+
+if ! aws sts get-caller-identity >/dev/null 2>&1; then
+  echo "AWSにログインされていません。このシェルで認証してから再実行してください。" >&2
+  echo "例: aws sso login --profile <profile>" >&2
+  echo "    または aws configure で認証情報を設定" >&2
   exit 1
 fi
 
@@ -27,6 +43,18 @@ export TF_VAR_front_container_port="${FRONT_CONTAINER_PORT}"
 export TF_VAR_back_container_port="${BACK_CONTAINER_PORT}"
 export TF_VAR_database_container_port="${DATABASE_CONTAINER_PORT}"
 export TF_VAR_cors_origins="${CORS_ORIGINS}"
+export TFSTATE_BUCKET="${TFSTATE_BUCKET:-${TFSTATE_BUCKET_DEFAULT}}"
+export TFSTATE_KEY="${TFSTATE_KEY:-${TFSTATE_KEY_DEFAULT}}"
+export TFSTATE_REGION="${TFSTATE_REGION:-${TFSTATE_REGION_DEFAULT}}"
 
-terraform -chdir="infra/aws" init
-terraform -chdir="infra/aws" destroy -auto-approve
+terraform -chdir="infra/aws" init \
+  -backend-config="bucket=${TFSTATE_BUCKET}" \
+  -backend-config="key=${TFSTATE_KEY}" \
+  -backend-config="region=${TFSTATE_REGION}"
+
+read -r -p "本当に terraform destroy を実行しますか？ (y/N): " DESTROY_CONFIRM
+if [[ "${DESTROY_CONFIRM}" == "y" || "${DESTROY_CONFIRM}" == "Y" ]]; then
+  terraform -chdir="infra/aws" destroy
+else
+  echo "destroyは実行しませんでした。"
+fi
