@@ -93,7 +93,7 @@ make destroy-aws
 ```
 
 - destroy 実行前に確認プロンプトが表示され、`y` 入力時のみ実行
-- `make destory-aws`（スペルは指示仕様に合わせたエイリアス）でも同じ処理を実行可能
+- `make destroy-aws`（スペルは指示仕様に合わせたエイリアス）でも同じ処理を実行可能
 
 ## 主要設定ファイル
 
@@ -116,3 +116,25 @@ make destroy-aws
 
 - 開発時はまず `make build-local` でローカル確認
 - AWS は `make build-aws`（planと確認付きapply）→ `make put-secrets-aws` の順で運用
+
+## CI/CD（GitHub Actions）
+
+### CI
+
+- ワークフロー名: `Build and Push Images to ECR`
+- ファイル: `.github/workflows/ci-build-and-push-ecr.yml`
+- 実行方式: `workflow_dispatch`（手動実行）
+- 入力:
+  - `service`: `frontend` / `backend` / `database`
+  - `image_tag`: デフォルト `latest`
+
+### CD
+
+- ファイル: `.github/workflows/cd-not-required.yml`
+- 現時点では不要（EC2起動時にECRからpullして起動する運用）
+
+### AWS側の前提（OIDC + AssumeRole）
+
+- TerraformでGitHub Actions用のOIDCプロバイダとIAMロールを作成
+  - 出力: `github_actions_ecr_push_role_arn`
+- CIワークフローは上記ロールをAssumeしてECRへpush

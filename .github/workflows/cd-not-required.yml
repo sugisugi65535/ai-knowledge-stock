@@ -1,0 +1,14 @@
+name: CD (Not Required)
+
+on:
+  # 現時点ではCD不要のため、手動実行のみ
+  workflow_dispatch:
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain current CD policy
+        run: |
+          echo "現時点ではCDは不要です。"
+          echo "EC2起動時にECRからイメージをpullして実行する運用です。"

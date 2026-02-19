@@ -25,6 +25,11 @@ data "aws_ami" "al2023" {
 
 locals {
   name_prefix = "ai-knowledge-stock"
+  ecr_repository_arns = [
+    "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.frontend_ecr_repository_name}",
+    "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.backend_ecr_repository_name}",
+    "arn:aws:ecr:${var.aws_region}:${var.aws_account_id}:repository/${var.database_ecr_repository_name}"
+  ]
 }
 
 # 機密値の「キー」だけをTerraformで作成し、値は別スクリプトで投入する。
@@ -281,6 +286,79 @@ resource "aws_iam_policy" "user_role_ec2_secrets_read" {
 resource "aws_iam_role_policy_attachment" "secrets_read" {
   role       = aws_iam_role.user_role_ec2.name
   policy_arn = aws_iam_policy.user_role_ec2_secrets_read.arn
+}
+
+# GitHub Actions OIDC連携でECRへpushするための設定
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  url = "https://token.actions.githubusercontent.com"
+
+  client_id_list = [
+    "sts.amazonaws.com"
+  ]
+
+  thumbprint_list = [
+    "6938fd4d98bab03faadb97b34396831e3780aea1"
+  ]
+}
+
+resource "aws_iam_role" "github_actions_ecr_push_role" {
+  name = var.github_actions_role_name
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github_actions.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:*"
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "github_actions_ecr_push_policy" {
+  name        = "github-actions-ecr-push-policy"
+  description = "Allow GitHub Actions to push images to ECR repositories"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:CompleteLayerUpload",
+          "ecr:InitiateLayerUpload",
+          "ecr:PutImage",
+          "ecr:UploadLayerPart",
+          "ecr:BatchGetImage"
+        ]
+        Resource = local.ecr_repository_arns
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_ecr_push_policy_attachment" {
+  role       = aws_iam_role.github_actions_ecr_push_role.name
+  policy_arn = aws_iam_policy.github_actions_ecr_push_policy.arn
 }
 
 resource "aws_iam_instance_profile" "user_role_ec2_profile" {
