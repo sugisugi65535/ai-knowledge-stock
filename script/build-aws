@@ -101,6 +101,8 @@ terraform -chdir="infra/aws" plan -out=tfplan
 read -r -p "terraform apply を実行しますか？ (y/N): " APPLY_CONFIRM
 if [[ "${APPLY_CONFIRM}" == "y" || "${APPLY_CONFIRM}" == "Y" ]]; then
   terraform -chdir="infra/aws" apply tfplan
+  echo "AWSリソースの反映後は、make put-secrets-aws で Secrets Manager に値を登録してください。"
 else
   echo "applyは実行しませんでした。"
+  echo "apply実行後は、make put-secrets-aws で Secrets Manager に値を登録してください。"
 fi
